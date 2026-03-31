@@ -9,23 +9,47 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      #################################
+      # OPTIONAL DELAY
+      #################################
+
       - name: Wait 30 minutes before judging
         run: sleep 1800
+
+
+      #################################
+      # CHECKOUT
+      #################################
 
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+
+      #################################
+      # INIT SCORE
+      #################################
+
       - name: Initialize Score
         run: echo "SCORE=0" >> $GITHUB_ENV
 
+
+      #################################
+      # DETECT ANDROID PROJECT
+      #################################
+
       - name: Detect Project Presence
-        id: detect_project
         run: |
-          if [ ! -f gradlew ]; then
-            echo "ANDROID_PROJECT=false" >> $GITHUB_ENV
-          else
+          if [ -f gradlew ]; then
             echo "ANDROID_PROJECT=true" >> $GITHUB_ENV
+          else
+            echo "ANDROID_PROJECT=false" >> $GITHUB_ENV
           fi
+
+
+      #################################
+      # SETUP JAVA
+      #################################
 
       - name: Setup JDK 17
         if: env.ANDROID_PROJECT == 'true'
@@ -34,9 +58,19 @@ jobs:
           distribution: temurin
           java-version: 17
 
+
+      #################################
+      # GRADLE PERMISSION
+      #################################
+
       - name: Grant Gradle Permission
         if: env.ANDROID_PROJECT == 'true'
         run: chmod +x gradlew || true
+
+
+      #################################
+      # BUILD APK
+      #################################
 
       - name: Attempt Build APK (+20)
         if: env.ANDROID_PROJECT == 'true'
@@ -45,11 +79,21 @@ jobs:
             echo "SCORE=$(($SCORE+20))" >> $GITHUB_ENV
           fi
 
+
+      #################################
+      # CHECK KOTLIN
+      #################################
+
       - name: Check Kotlin Usage (+10)
         run: |
           if find . -name "*.kt" | grep -q .; then
             echo "SCORE=$(($SCORE+10))" >> $GITHUB_ENV
           fi
+
+
+      #################################
+      # REQUIRED ACTIVITIES
+      #################################
 
       - name: Check Required Activities (+20)
         run: |
@@ -73,68 +117,142 @@ jobs:
           SCORE_ADD=$(($FOUND*4))
           echo "SCORE=$(($SCORE+$SCORE_ADD))" >> $GITHUB_ENV
 
-      - name: Check RecyclerView Usage (+10)
+
+      #################################
+      # SAFE SOURCE PATH CHECK
+      #################################
+
+      - name: Detect source directory
         run: |
-          if grep -r "RecyclerView" app/src/ 2>/dev/null; then
+          if [ -d app/src ]; then
+            echo "SRC_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "SRC_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+
+      #################################
+      # RECYCLERVIEW
+      #################################
+
+      - name: Check RecyclerView Usage (+10)
+        if: env.SRC_EXISTS == 'true'
+        run: |
+          if grep -r "RecyclerView" app/src/ ; then
             echo "SCORE=$(($SCORE+10))" >> $GITHUB_ENV
           fi
+
+
+      #################################
+      # RETROFIT / OKHTTP
+      #################################
 
       - name: Check Retrofit Usage (+10)
+        if: env.SRC_EXISTS == 'true'
         run: |
-          if grep -r "Retrofit" app/src/ 2>/dev/null || grep -r "OkHttp" app/src/ 2>/dev/null; then
+          if grep -r "Retrofit" app/src/ || grep -r "OkHttp" app/src/ ; then
             echo "SCORE=$(($SCORE+10))" >> $GITHUB_ENV
           fi
 
+
+      #################################
+      # LOGIN ENDPOINT
+      #################################
+
       - name: Check Login Endpoint (+5)
+        if: env.SRC_EXISTS == 'true'
         run: |
-          if grep -r "auth/v1/token" app/src/ 2>/dev/null; then
+          if grep -r "auth/v1/token" app/src/ ; then
             echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
           fi
+
+
+      #################################
+      # TOKEN STORAGE
+      #################################
 
       - name: Check Token Storage (+5)
+        if: env.SRC_EXISTS == 'true'
         run: |
-          if grep -r "SharedPreferences" app/src/ 2>/dev/null; then
+          if grep -r "SharedPreferences" app/src/ ; then
             echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
           fi
+
+
+      #################################
+      # BARANG ENDPOINT
+      #################################
 
       - name: Check Barang Endpoint (+5)
+        if: env.SRC_EXISTS == 'true'
         run: |
-          if grep -r "/rest/v1/barang" app/src/ 2>/dev/null; then
+          if grep -r "/rest/v1/barang" app/src/ ; then
             echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
           fi
+
+
+      #################################
+      # BARANG MASUK
+      #################################
 
       - name: Check Barang Masuk Endpoint (+5)
+        if: env.SRC_EXISTS == 'true'
         run: |
-          if grep -r "barang_masuk" app/src/ 2>/dev/null; then
+          if grep -r "barang_masuk" app/src/ ; then
             echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
           fi
+
+
+      #################################
+      # BARANG KELUAR
+      #################################
 
       - name: Check Barang Keluar Endpoint (+5)
+        if: env.SRC_EXISTS == 'true'
         run: |
-          if grep -r "barang_keluar" app/src/ 2>/dev/null; then
+          if grep -r "barang_keluar" app/src/ ; then
             echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
           fi
+
+
+      #################################
+      # FILTER FEATURE
+      #################################
 
       - name: Check Filter Feature (+5)
+        if: env.SRC_EXISTS == 'true'
         run: |
-          if grep -r "kategori_id" app/src/ 2>/dev/null; then
+          if grep -r "kategori_id" app/src/ ; then
             echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
           fi
 
-      - name: Print Final Score
-        run: |
-          echo "FINAL_SCORE=$SCORE"
-          echo "Score: $SCORE / 100"
 
-      - name: Save Score Artifact
-        run: |
-          echo "Score: $SCORE / 100" > score.txt
+      #################################
+      # EXPORT SCORE.JSON
+      #################################
 
-      - name: Upload Score
-        uses: actions/upload-artifact@v4
-        with:
-          name: autojudge-score
-          path: score.txt
+      - name: Export score.json
+        run: |
+          mkdir -p public
+          echo "{ \"score\": \"$SCORE\" }" > public/score.json
+
+
+      #################################
+      # COMMIT SCORE.JSON
+      #################################
+
+      - name: Commit score.json
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add public/score.json
+          git commit -m "update autojudge score" || echo "no changes"
+          git push
+
+
+      #################################
+      # SUMMARY
+      #################################
 
       - name: Summary Output
         run: |
