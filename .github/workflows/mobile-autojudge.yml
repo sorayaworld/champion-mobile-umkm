@@ -1,0 +1,142 @@
+name: LKS Mobile Auto Judge (Delayed Safe Mode)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  judge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait 30 minutes before judging
+        run: sleep 1800
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Initialize Score
+        run: echo "SCORE=0" >> $GITHUB_ENV
+
+      - name: Detect Project Presence
+        id: detect_project
+        run: |
+          if [ ! -f gradlew ]; then
+            echo "ANDROID_PROJECT=false" >> $GITHUB_ENV
+          else
+            echo "ANDROID_PROJECT=true" >> $GITHUB_ENV
+          fi
+
+      - name: Setup JDK 17
+        if: env.ANDROID_PROJECT == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Grant Gradle Permission
+        if: env.ANDROID_PROJECT == 'true'
+        run: chmod +x gradlew || true
+
+      - name: Attempt Build APK (+20)
+        if: env.ANDROID_PROJECT == 'true'
+        run: |
+          if ./gradlew assembleDebug; then
+            echo "SCORE=$(($SCORE+20))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Kotlin Usage (+10)
+        run: |
+          if find . -name "*.kt" | grep -q .; then
+            echo "SCORE=$(($SCORE+10))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Required Activities (+20)
+        run: |
+          REQUIRED=(
+            "LoginActivity.kt"
+            "BarangListActivity.kt"
+            "BarangDetailActivity.kt"
+            "TransaksiMasukActivity.kt"
+            "TransaksiKeluarActivity.kt"
+          )
+
+          FOUND=0
+
+          for file in "${REQUIRED[@]}"
+          do
+            if find . -name "$file" | grep -q .; then
+              FOUND=$(($FOUND+1))
+            fi
+          done
+
+          SCORE_ADD=$(($FOUND*4))
+          echo "SCORE=$(($SCORE+$SCORE_ADD))" >> $GITHUB_ENV
+
+      - name: Check RecyclerView Usage (+10)
+        run: |
+          if grep -r "RecyclerView" app/src/ 2>/dev/null; then
+            echo "SCORE=$(($SCORE+10))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Retrofit Usage (+10)
+        run: |
+          if grep -r "Retrofit" app/src/ 2>/dev/null || grep -r "OkHttp" app/src/ 2>/dev/null; then
+            echo "SCORE=$(($SCORE+10))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Login Endpoint (+5)
+        run: |
+          if grep -r "auth/v1/token" app/src/ 2>/dev/null; then
+            echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Token Storage (+5)
+        run: |
+          if grep -r "SharedPreferences" app/src/ 2>/dev/null; then
+            echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Barang Endpoint (+5)
+        run: |
+          if grep -r "/rest/v1/barang" app/src/ 2>/dev/null; then
+            echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Barang Masuk Endpoint (+5)
+        run: |
+          if grep -r "barang_masuk" app/src/ 2>/dev/null; then
+            echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Barang Keluar Endpoint (+5)
+        run: |
+          if grep -r "barang_keluar" app/src/ 2>/dev/null; then
+            echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
+          fi
+
+      - name: Check Filter Feature (+5)
+        run: |
+          if grep -r "kategori_id" app/src/ 2>/dev/null; then
+            echo "SCORE=$(($SCORE+5))" >> $GITHUB_ENV
+          fi
+
+      - name: Print Final Score
+        run: |
+          echo "FINAL_SCORE=$SCORE"
+          echo "Score: $SCORE / 100"
+
+      - name: Save Score Artifact
+        run: |
+          echo "Score: $SCORE / 100" > score.txt
+
+      - name: Upload Score
+        uses: actions/upload-artifact@v4
+        with:
+          name: autojudge-score
+          path: score.txt
+
+      - name: Summary Output
+        run: |
+          echo "## 🏁 Auto Judge Result" >> $GITHUB_STEP_SUMMARY
+          echo "Final Score: **$SCORE / 100**" >> $GITHUB_STEP_SUMMARY
